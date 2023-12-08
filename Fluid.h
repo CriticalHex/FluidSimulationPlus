@@ -21,7 +21,7 @@ public:
 private:
   void curl(const uint16_t x, const uint16_t y);
   void advectDensity();
-  void setDensityBoundary();
+  void boundDensity();
   void color();
   void diffuseDensity();
   void project();
@@ -29,6 +29,8 @@ private:
   void addDensitySource();
   void diffuseVelocity();
   void advectVelocity();
+  void boundVelocity();
+  void printVelocity();
   template <typename T> void swap(T **from, T **to) {
     T *temp = *from;
     *from = *to;

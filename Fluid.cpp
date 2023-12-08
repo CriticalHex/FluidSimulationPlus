@@ -12,9 +12,9 @@ Fluid::Fluid() {
   _invTrueWidth = _invTrueHeight = _invWidth = _invHeight = _invNumCells = _dt =
       0.0;
   _width = _height = _numCells = _trueWidth = _trueHeight = _drawNumCells = 0;
-  _diffusion = 0.002;
+  _diffusion = 0.008;
   _densityFade = 1;
-  _viscosity = 1;
+  _viscosity = .02;
   _solverIterations = 10;
 }
 
@@ -94,6 +94,13 @@ void Fluid::color() {
     _pColor[i] = sf::Color(density * 25.25 * 6, density * 25.25 * 8,
                            density * 25.25 * 12);
   }
+  // double velocity;
+  // for (int i = 0; i < _numCells; i++) {
+  //   velocity = (_pVelocity[i].x * _pVelocity[i].x) +
+  //              (_pVelocity[i].y * _pVelocity[i].y);
+  //   _pColor[i] = sf::Color(velocity * 25.25 * 6, velocity * 25.25 * 8,
+  //                          velocity * 25.25 * 12);
+  // }
 }
 
 void Fluid::draw(sf::RenderWindow &window) {
@@ -139,7 +146,7 @@ float clamp(const float VALUE, const float MIN, const float MAX) {
   return VALUE;
 }
 
-void Fluid::setDensityBoundary() {
+void Fluid::boundDensity() {
   int destination1Index, destination2Index, source1Index, source2Index;
   int step = _trueWidth;
 
@@ -219,7 +226,7 @@ void Fluid::advectDensity() {
                    _pOldDensity[index(rightOfXVectorIndex, belowYVectorIndex)]);
     }
   }
-  setDensityBoundary();
+  boundDensity();
 }
 
 void Fluid::diffuseDensity() {
@@ -240,7 +247,7 @@ void Fluid::diffuseDensity() {
         linearIndex++; // index(x,y)
       }
     }
-    setDensityBoundary();
+    boundDensity();
   }
 }
 
@@ -267,11 +274,82 @@ void Fluid::project() {
       linearIndex++;
     }
   }
+
+  int destination1Index, destination2Index, source1Index, source2Index;
+  int step = _trueWidth;
+
+  destination1Index = index(0, 1);
+  source1Index = index(1, 1);
+  destination2Index = index(_width + 1, 1);
+  source2Index = index(_width, 1);
+  for (int i = 1; i <= _height; i++) {
+    _pOldVelocity[destination1Index] = _pOldVelocity[source1Index];
+    destination1Index += step;
+    source1Index += step;
+    _pOldVelocity[destination2Index] = _pOldVelocity[source2Index];
+    destination2Index += step;
+    source2Index += step;
+  }
+
+  destination1Index = index(1, 0);
+  source1Index = index(1, 1);
+  destination2Index = index(1, _height + 1);
+  source2Index = index(1, _height);
+  for (int i = 1; i <= _width; i++) {
+    _pOldVelocity[destination1Index++] = _pOldVelocity[source1Index++];
+    _pOldVelocity[destination2Index++] = _pOldVelocity[source2Index++];
+  }
+
+  _pOldVelocity[index(0, 0)] =
+      0.5f * (_pOldVelocity[index(1, 0)] + _pOldVelocity[index(0, 1)]);
+  _pOldVelocity[index(0, _height + 1)] =
+      0.5f *
+      (_pOldVelocity[index(1, _height + 1)] + _pOldVelocity[index(0, _height)]);
+  _pOldVelocity[index(_width + 1, 0)] =
+      0.5f *
+      (_pOldVelocity[index(_width, 0)] + _pOldVelocity[index(_width + 1, 1)]);
+  _pOldVelocity[index(_width + 1, _height + 1)] =
+      0.5f * (_pOldVelocity[index(_width, _height + 1)] +
+              _pOldVelocity[index(_width + 1, _height)]);
+
+  for (int iteration = 0; iteration < _solverIterations; iteration++) {
+    for (int j = _height; j > 0; --j) {
+      linearIndex = index(_width, j);
+      for (int i = _width; i > 0; --i) {
+        _pOldVelocity[linearIndex].x =
+            (_pOldVelocity[linearIndex - 1].x +
+             _pOldVelocity[linearIndex + 1].x +
+             _pOldVelocity[linearIndex - _trueWidth].x +
+             _pOldVelocity[linearIndex + _trueWidth].x +
+             _pOldVelocity[linearIndex].y) *
+            .25;
+        linearIndex++;
+      }
+    }
+    // setBoundary02d(reinterpret_cast<Vec2f *>(&pdiv[0].x));
+  }
+
+  float fx = 0.5f * _width;
+  float fy = 0.5f * _height;
+  for (int y = _height; y > 0; --y) {
+    linearIndex = index(_width, y);
+    for (int x = _width; x > 0; --x) {
+      _pVelocity[linearIndex].x -= fx * (_pOldVelocity[linearIndex + 1].x -
+                                         _pOldVelocity[linearIndex - 1].x);
+      _pVelocity[linearIndex].y -=
+          fy * (_pOldVelocity[linearIndex + _trueWidth].x -
+                _pOldVelocity[linearIndex - _trueWidth].x);
+      --linearIndex;
+    }
+  }
+  boundVelocity();
 }
 
 void Fluid::addGravity() {
-  for (int i = 1; i < _width; i++) {
-    addVelocity(sf::Vector2f(0, -1), i, 1);
+  for (int y = 1; y <= _height; y++) {
+    for (int x = 1; x <= _width; x++) {
+      addVelocity(sf::Vector2f(0, .1f), x, y);
+    }
   }
 }
 
@@ -287,7 +365,27 @@ void Fluid::addDensitySource() {
   }
 }
 
-void Fluid::diffuseVelocity() {}
+void Fluid::diffuseVelocity() {
+  float a = _dt * _viscosity * _width * _height;
+  int linearIndex;
+  float c = 1. / (1. + 4. * a);
+  for (int iteration = 0; iteration < _solverIterations; iteration++) {
+    for (int y = 1; y <= _height; y++) {
+      linearIndex = index(1, y);
+      for (int x = 1; x <= _width; x++) {
+        _pVelocity[linearIndex] =
+            ((_pVelocity[linearIndex - 1] + _pVelocity[linearIndex + 1] +
+              _pVelocity[linearIndex - _trueWidth] +
+              _pVelocity[linearIndex + _trueWidth]) *
+                 a +
+             _pOldVelocity[linearIndex]) *
+            c;
+        linearIndex++; // index(x,y)
+      }
+    }
+    boundVelocity();
+  }
+}
 
 void Fluid::advectVelocity() {
   int xVectorIndex, yVectorIndex, rightOfXVectorIndex, belowYVectorIndex;
@@ -318,7 +416,6 @@ void Fluid::advectVelocity() {
       decimalBetweenXVectors = 1 - betweenXVectors;
       betweenYVectors = yVector - yVectorIndex;
       decimalBetweenYVectors = 1 - betweenYVectors;
-
       _pVelocity[linearIndex].x =
           decimalBetweenXVectors *
               (decimalBetweenYVectors *
@@ -332,12 +429,12 @@ void Fluid::advectVelocity() {
                    _pOldVelocity[index(rightOfXVectorIndex, belowYVectorIndex)]
                        .x);
       _pVelocity[linearIndex].y =
-          decimalBetweenXVectors *
-              (decimalBetweenYVectors *
+          decimalBetweenXVectors *      // 1
+              (decimalBetweenYVectors * // > .5
                    _pOldVelocity[index(xVectorIndex, yVectorIndex)].y +
                betweenYVectors *
                    _pOldVelocity[index(xVectorIndex, belowYVectorIndex)].y) +
-          betweenXVectors *
+          betweenXVectors * // all zero here
               (decimalBetweenYVectors *
                    _pOldVelocity[index(rightOfXVectorIndex, yVectorIndex)].y +
                betweenYVectors *
@@ -345,32 +442,90 @@ void Fluid::advectVelocity() {
                        .y);
     }
   }
-  //   setBoundary2d(1, _pVelocity);
-  //   setBoundary2d(2, _pVelocity);
+  boundVelocity();
+}
+
+void Fluid::boundVelocity() {
+  int destination1Index, destination2Index, source1Index, source2Index;
+  int step = _trueWidth;
+
+  destination1Index = index(0, 1);
+  source1Index = index(1, 1);
+  destination2Index = index(_width + 1, 1);
+  source2Index = index(_width, 1);
+  for (int i = 1; i <= _height; i++) {
+    _pVelocity[destination1Index].x = -_pVelocity[source1Index].x;
+    _pVelocity[destination1Index].y = _pVelocity[source1Index].y;
+    destination1Index += step;
+    source1Index += step;
+    _pVelocity[destination2Index].x = -_pVelocity[source2Index].x;
+    _pVelocity[destination2Index].y = _pVelocity[source2Index].y;
+    destination2Index += step;
+    source2Index += step;
+  }
+
+  destination1Index = index(1, 0);
+  source1Index = index(1, 1);
+  destination2Index = index(1, _height + 1);
+  source2Index = index(1, _height);
+  for (int i = 1; i <= _width; i++) {
+    _pVelocity[destination1Index++].y = -_pVelocity[source1Index++].y;
+    _pVelocity[destination1Index++].x = _pVelocity[source1Index++].x;
+    _pVelocity[destination2Index++].y = -_pVelocity[source2Index++].y;
+    _pVelocity[destination2Index++].x = _pVelocity[source2Index++].x;
+  }
+
+  _pVelocity[index(0, 0)] =
+      0.5f * (_pVelocity[index(1, 0)] + _pVelocity[index(0, 1)]);
+  _pVelocity[index(0, _height + 1)] =
+      0.5f *
+      (_pVelocity[index(1, _height + 1)] + _pVelocity[index(0, _height)]);
+  _pVelocity[index(_width + 1, 0)] =
+      0.5f * (_pVelocity[index(_width, 0)] + _pVelocity[index(_width + 1, 1)]);
+  _pVelocity[index(_width + 1, _height + 1)] =
+      0.5f * (_pVelocity[index(_width, _height + 1)] +
+              _pVelocity[index(_width + 1, _height)]);
+}
+
+void Fluid::printVelocity() {
+  for (int i = 0; i < _trueHeight; i++) {
+    for (int j = 0; j < _trueWidth; j++) {
+      cout << setw(1) << _pVelocity[index(j, i)].x << ", "
+           << _pVelocity[index(j, i)].y << " ";
+    }
+    cout << endl;
+  }
+  cout << endl;
 }
 
 void Fluid::update(const float dt) {
   _dt = dt;
+  // advects may want to be looking up and left not down and right
 
   addDensitySource();
 
   addGravity();
 
-  addSource(_pVelocity, _pOldVelocity);
+  // addSource(_pVelocity, _pOldVelocity); // actually unnecessary
 
   swap(&_pVelocity, &_pOldVelocity);
 
-  // diffuseUV(_viscocity);
+  diffuseVelocity();
+  // printVelocity();
 
-  //   project();
+  project();
+  // printVelocity();
 
   swap(&_pVelocity, &_pOldVelocity);
+  // printVelocity();
 
-  // advect2d(_pVelocity, _pOldVelocity);
+  advectVelocity();
+  // printVelocity();
 
-  //   project();
+  project();
+  // printVelocity();
 
-  addSource(_pDensity, _pOldDensity);
+  // addSource(_pDensity, _pOldDensity); // actually unnecessary
 
   swap(&_pDensity, &_pOldDensity);
 
