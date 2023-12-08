@@ -1,0 +1,16 @@
+---
+Language:        Cpp
+BasedOnStyle:    Google
+AccessModifierOffset: -2
+Standard:        Cpp17
+IndentWidth:     4
+UseTab:          Never
+TabWidth:        4
+BreakBeforeBraces: Attach
+AllowShortFunctionsOnASingleLine: None
+DerivePointerAlignment: false
+AlignConsecutiveDeclarations: true
+AlignOperands:   true
+AlignTrailingComments: true
+BreakBeforeBinaryOperators: NonAssignment
+IndentCaseLabels: true
