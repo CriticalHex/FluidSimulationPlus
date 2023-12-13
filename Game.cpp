@@ -39,6 +39,9 @@ void Game::processEvents() {
       case sf::Keyboard::Q:
         _window.close();
         break;
+      case sf::Keyboard::Space:
+        _fluid.saveImage();
+        break;
       }
       break;
     case sf::Event::MouseMoved:

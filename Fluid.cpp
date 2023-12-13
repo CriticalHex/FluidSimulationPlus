@@ -1,18 +1,17 @@
 #include "Fluid.h"
 #include <cmath>
-#include <iomanip>
-#include <iostream> // debug!!
 
 using namespace std;
 
 Fluid::Fluid() {
+  _pVectors = nullptr;
   _pDensity = _pOldDensity = _pDensityStorage = _pCurl = nullptr;
   _pColor = nullptr;
   _pVelocity = _pOldVelocity = _pVelocityStorage = nullptr;
   _invTrueWidth = _invTrueHeight = _invWidth = _invHeight = _invNumCells = _dt =
       0.0;
   _width = _height = _numCells = _trueWidth = _trueHeight = _drawNumCells = 0;
-  _diffusion = 0.008;
+  _diffusion = 0.006;
   _densityFade = 1;
   _viscosity = .02;
   _solverIterations = 10;
@@ -46,6 +45,7 @@ Fluid &Fluid::setSize(int xSize, int ySize, int scale) {
 void Fluid::reinitialize() {
   clear();
 
+  _pVectors = new sf::VertexArray[_numCells];
   _pDensity = new double[_numCells];
   _pOldDensity = new double[_numCells];
   _pDensityStorage = new double[_numCells];
@@ -56,6 +56,7 @@ void Fluid::reinitialize() {
   _pCurl = new double[_numCells];
 
   for (int i = 0; i < _numCells; i++) {
+    _pVectors[i] = sf::VertexArray(sf::Lines, 2);
     _pDensity[i] = 0.0f;
     _pOldDensity[i] = 0.0f;
     _pColor[i] = sf::Color::Black;
@@ -94,20 +95,24 @@ void Fluid::color() {
     _pColor[i] = sf::Color(density * 25.25 * 6, density * 25.25 * 8,
                            density * 25.25 * 12);
   }
-  // double velocity;
-  // for (int i = 0; i < _numCells; i++) {
-  //   velocity = (_pVelocity[i].x * _pVelocity[i].x) +
-  //              (_pVelocity[i].y * _pVelocity[i].y);
-  //   _pColor[i] = sf::Color(velocity * 25.25 * 6, velocity * 25.25 * 8,
-  //                          velocity * 25.25 * 12);
-  // }
 }
+
+void Fluid::saveImage() { _image.saveToFile("./screenshot.png"); }
 
 void Fluid::draw(sf::RenderWindow &window) {
   sf::Color cellColor;
+  int linearIndex;
+  sf::VertexArray centerVector(sf::Lines, 2);
+  centerVector[0].position =
+      sf::Vector2f(_width * _drawScale / 2, _height * _drawScale / 2);
+  centerVector[0].color = sf::Color::Red;
+  centerVector[1].position =
+      centerVector[0].position + _pVelocity[index(_width / 2, _height / 2)];
+  centerVector[1].color = sf::Color::Red;
   for (uint16_t y = 0; y < _height; y++) {
     for (uint16_t x = 0; x < _width; x++) {
-      cellColor = _pColor[index(x + 1, y + 1)];
+      linearIndex = index(x + 1, y + 1);
+      cellColor = _pColor[linearIndex];
       for (uint16_t i = 0; i < _drawScale; i++) {
         for (uint16_t j = 0; j < _drawScale; j++) {
           _image.setPixel((x * _drawScale) + j, (y * _drawScale) + i,
@@ -127,8 +132,8 @@ void Fluid::addVelocity(const sf::Vector2f velocity, const uint16_t x,
 
 void Fluid::addDensity(const double density, const uint16_t windowX,
                        const uint16_t windowY) {
-  uint16_t x = (windowX / _drawScale) + 1;
-  uint16_t y = (windowY / _drawScale) + 1;
+  uint16_t x = clamp(windowX / _drawScale, 0, _width - 1);
+  uint16_t y = clamp(windowY / _drawScale, 0, _height - 1);
   _pDensity[index(x, y)] = clamp(_pDensity[index(x, y)] + density, 0., 1.);
 }
 
@@ -259,22 +264,7 @@ void Fluid::fadeDensity() {
   }
 }
 
-void Fluid::project() {
-  // change divergence to curl I think
-  int linearIndex;
-  float h = -0.5f / _width;
-  for (int y = 1; y <= _height; y++) {
-    linearIndex = index(1, y);
-    for (int x = 1; x <= _width; x++) {
-      _pOldVelocity[linearIndex].x =
-          h * (_pVelocity[linearIndex + 1].x - _pVelocity[linearIndex - 1].x +
-               _pVelocity[linearIndex + _trueWidth].y -
-               _pVelocity[linearIndex - _trueWidth].y);
-      _pOldVelocity[linearIndex].y = 0;
-      linearIndex++;
-    }
-  }
-
+void Fluid::boundDivergence() {
   int destination1Index, destination2Index, source1Index, source2Index;
   int step = _trueWidth;
 
@@ -311,11 +301,62 @@ void Fluid::project() {
   _pOldVelocity[index(_width + 1, _height + 1)] =
       0.5f * (_pOldVelocity[index(_width, _height + 1)] +
               _pOldVelocity[index(_width + 1, _height)]);
+}
 
+void Fluid::boundPressure() {
+  int destination1Index, destination2Index, source1Index, source2Index;
+  int step = _trueWidth;
+
+  destination1Index = index(0, 1);
+  source1Index = index(1, 1);
+  destination2Index = index(_width + 1, 1);
+  source2Index = index(_width, 1);
+  for (int i = 1; i <= _height; i++) {
+    _pOldVelocity[destination1Index].x = _pOldVelocity[source1Index].x;
+    _pOldVelocity[destination1Index].y = 0.f;
+    destination1Index += step;
+    source1Index += step;
+    _pOldVelocity[destination2Index].x = _pOldVelocity[source2Index].x;
+    _pOldVelocity[destination2Index].y = 0.f;
+    destination2Index += step;
+    source2Index += step;
+  }
+
+  destination1Index = index(1, 0);
+  source1Index = index(1, 1);
+  destination2Index = index(1, _height + 1);
+  source2Index = index(1, _height);
+  for (int i = 1; i <= _width; i++) {
+    _pOldVelocity[destination1Index].x = _pOldVelocity[source1Index].x;
+    _pOldVelocity[destination1Index++].y = 0.f;
+    _pOldVelocity[destination2Index].x = _pOldVelocity[source2Index].x;
+    _pOldVelocity[destination2Index++].y = 0.f;
+  }
+
+  _pOldVelocity[index(0, 0)].x =
+      0.5f * (_pOldVelocity[index(1, 0)].x + _pOldVelocity[index(0, 1)].x);
+  _pOldVelocity[index(0, _height + 1)].x =
+      0.5f * (_pOldVelocity[index(1, _height + 1)].x +
+              _pOldVelocity[index(0, _height)].x);
+  _pOldVelocity[index(_width + 1, 0)].x =
+      0.5f * (_pOldVelocity[index(_width, 0)].x +
+              _pOldVelocity[index(_width + 1, 1)].x);
+  _pOldVelocity[index(_width + 1, _height + 1)].x =
+      0.5f * (_pOldVelocity[index(_width, _height + 1)].x +
+              _pOldVelocity[index(_width + 1, _height)].x);
+
+  _pOldVelocity[index(0, 0)].y = 0;
+  _pOldVelocity[index(0, _height + 1)].y = 0;
+  _pOldVelocity[index(_width + 1, 0)].y = 0;
+  _pOldVelocity[index(_width + 1, _height + 1)].y = 0;
+}
+
+void Fluid::pressurize() {
+  int linearIndex;
   for (int iteration = 0; iteration < _solverIterations; iteration++) {
-    for (int j = _height; j > 0; --j) {
-      linearIndex = index(_width, j);
-      for (int i = _width; i > 0; --i) {
+    for (int y = 1; y <= _height; y++) {
+      linearIndex = index(1, y);
+      for (int x = 1; x <= _width; x++) {
         _pOldVelocity[linearIndex].x =
             (_pOldVelocity[linearIndex - 1].x +
              _pOldVelocity[linearIndex + 1].x +
@@ -326,31 +367,53 @@ void Fluid::project() {
         linearIndex++;
       }
     }
-    // setBoundary02d(reinterpret_cast<Vec2f *>(&pdiv[0].x));
+    boundPressure();
   }
+}
+
+void Fluid::project() {
+  int linearIndex;
+  float h = -0.5f / _width;
+  // compute divergence and store in oldVelocity
+  for (int y = 1; y <= _height; y++) {
+    linearIndex = index(1, y);
+    for (int x = 1; x <= _width; x++) {
+      _pOldVelocity[linearIndex].x =
+          h * (_pVelocity[linearIndex + 1].x - _pVelocity[linearIndex - 1].x +
+               _pVelocity[linearIndex + _trueWidth].y -
+               _pVelocity[linearIndex - _trueWidth].y);
+      _pOldVelocity[linearIndex].y = 0;
+      linearIndex++;
+    }
+  }
+
+  boundDivergence();
+
+  pressurize();
 
   float fx = 0.5f * _width;
   float fy = 0.5f * _height;
-  for (int y = _height; y > 0; --y) {
+  for (int y = 1; y <= _height; y++) {
     linearIndex = index(_width, y);
-    for (int x = _width; x > 0; --x) {
+    for (int x = 1; x <= _width; x++) {
       _pVelocity[linearIndex].x -= fx * (_pOldVelocity[linearIndex + 1].x -
                                          _pOldVelocity[linearIndex - 1].x);
       _pVelocity[linearIndex].y -=
           fy * (_pOldVelocity[linearIndex + _trueWidth].x -
                 _pOldVelocity[linearIndex - _trueWidth].x);
-      --linearIndex;
+      linearIndex++;
     }
   }
   boundVelocity();
 }
 
 void Fluid::addGravity() {
-  for (int y = 1; y <= _height; y++) {
-    for (int x = 1; x <= _width; x++) {
-      addVelocity(sf::Vector2f(0, .1f), x, y);
-    }
-  }
+  // for (int y = 1; y <= _height; y++) {
+  //   for (int x = 1; x <= _width; x++) {
+  //     addVelocity(sf::Vector2f(0, .1f), x, y);
+  //   }
+  // }
+  addVelocity(sf::Vector2f(5, 5), _width / 2, _height / 2);
 }
 
 void Fluid::addDensitySource() {
@@ -429,12 +492,12 @@ void Fluid::advectVelocity() {
                    _pOldVelocity[index(rightOfXVectorIndex, belowYVectorIndex)]
                        .x);
       _pVelocity[linearIndex].y =
-          decimalBetweenXVectors *      // 1
-              (decimalBetweenYVectors * // > .5
+          decimalBetweenXVectors *
+              (decimalBetweenYVectors *
                    _pOldVelocity[index(xVectorIndex, yVectorIndex)].y +
                betweenYVectors *
                    _pOldVelocity[index(xVectorIndex, belowYVectorIndex)].y) +
-          betweenXVectors * // all zero here
+          betweenXVectors *
               (decimalBetweenYVectors *
                    _pOldVelocity[index(rightOfXVectorIndex, yVectorIndex)].y +
                betweenYVectors *
@@ -469,9 +532,9 @@ void Fluid::boundVelocity() {
   destination2Index = index(1, _height + 1);
   source2Index = index(1, _height);
   for (int i = 1; i <= _width; i++) {
-    _pVelocity[destination1Index++].y = -_pVelocity[source1Index++].y;
+    _pVelocity[destination1Index].y = -_pVelocity[source1Index].y;
     _pVelocity[destination1Index++].x = _pVelocity[source1Index++].x;
-    _pVelocity[destination2Index++].y = -_pVelocity[source2Index++].y;
+    _pVelocity[destination2Index].y = -_pVelocity[source2Index].y;
     _pVelocity[destination2Index++].x = _pVelocity[source2Index++].x;
   }
 
@@ -487,45 +550,24 @@ void Fluid::boundVelocity() {
               _pVelocity[index(_width + 1, _height)]);
 }
 
-void Fluid::printVelocity() {
-  for (int i = 0; i < _trueHeight; i++) {
-    for (int j = 0; j < _trueWidth; j++) {
-      cout << setw(1) << _pVelocity[index(j, i)].x << ", "
-           << _pVelocity[index(j, i)].y << " ";
-    }
-    cout << endl;
-  }
-  cout << endl;
-}
-
 void Fluid::update(const float dt) {
   _dt = dt;
-  // advects may want to be looking up and left not down and right
 
   addDensitySource();
 
   addGravity();
 
-  // addSource(_pVelocity, _pOldVelocity); // actually unnecessary
-
   swap(&_pVelocity, &_pOldVelocity);
 
   diffuseVelocity();
-  // printVelocity();
 
   project();
-  // printVelocity();
 
   swap(&_pVelocity, &_pOldVelocity);
-  // printVelocity();
 
   advectVelocity();
-  // printVelocity();
 
   project();
-  // printVelocity();
-
-  // addSource(_pDensity, _pOldDensity); // actually unnecessary
 
   swap(&_pDensity, &_pOldDensity);
 

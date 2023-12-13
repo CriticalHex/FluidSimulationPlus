@@ -1,0 +1,38 @@
+TITLE:
+    Name: Kyle Kubaska
+    Section: A
+    Project Title: Fluid Simulation
+
+PROBLEM DESCRIPTION:
+    A program that graphically simulates a fluid. A constant velocity is pushing
+    up and to the right from the center. This is a physically accurate program, 
+    calculated using the Navier Stokes equations. The fluid is incompressible 
+    with a viscosity, and diffusion rate. The user can add density by clicking,
+    and capture the current screen by pressing the spacebar.
+
+PROGRAM DOCUMENTATION:
+    To run this program, you'll need have a compiled version of SFML, in the places that the Makefile expects. 
+    You can add density by clicking, and capture the current screen by pressing the spacebar. 
+    You can close it by pressing Q.
+    I'd have loved to mutlithread this, but time got the better of me. Luckily it's not laggy. 
+    I'd like the user to be able to add velocity by moving the mouse,
+    and I'd like to be able to add solid objects to the field.
+
+CLASS DESCRIPTION: 
+    I created the Fluid class. It encapsulated the entire fluid, including its velocity and density, 
+    as well as projecting, diffusing, and advecting those values. This class allowed an easier understanding of the fluid.
+
+LIST DATA STRUCTURE:
+    I used several lists of velocities, densities, colors, etc. This was necessary as the program had sequential values to render.
+    It made all the necessary math much easier.
+
+FILE I/O:
+    The user can save a picture of the game instantly. This program did not need file IO.
+
+REFLECTIONS:
+    In writing a fluid simulator, I gained an understanding of the interplay between physics, 
+    mathematics, and computer science. Developing the simulator required a deep dive into fluid 
+    dynamics concepts. I learned to translate complex equations governing fluid behavior into code. 
+    The process involved challenges like managing boundary conditions, optimizing performance, and 
+    striking a balance between accuracy and computational cost. Beyond the technical aspects, the final result
+    is really quite pretty.

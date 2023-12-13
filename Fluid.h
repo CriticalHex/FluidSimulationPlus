@@ -17,6 +17,7 @@ public:
                    const uint16_t y);
   void addDensity(const double density, const uint16_t x, const uint16_t y);
   void update(const float dt);
+  void saveImage();
 
 private:
   void curl(const uint16_t x, const uint16_t y);
@@ -30,7 +31,9 @@ private:
   void diffuseVelocity();
   void advectVelocity();
   void boundVelocity();
-  void printVelocity();
+  void boundDivergence();
+  void pressurize();
+  void boundPressure();
   template <typename T> void swap(T **from, T **to) {
     T *temp = *from;
     *from = *to;
@@ -52,6 +55,7 @@ private:
   sf::Texture _tex;
   sf::Sprite _sprite;
 
+  sf::VertexArray *_pVectors;
   sf::Color *_pColor;
   sf::Vector2f *_pVelocity, *_pOldVelocity, *_pVelocityStorage;
   double *_pDensity, *_pOldDensity, *_pDensityStorage, *_pCurl, _invTrueWidth,
